@@ -1,9 +1,11 @@
 const express = require("express");
 const mongoose = require("mongoose");
+const cors = require("cors");
 require("dotenv").config({ path: require("path").join(__dirname, ".env") });
 
 const app = express();
 
+app.use(cors());
 app.use(express.json());
 
 const mongoUri = process.env.MONGO_URI;
@@ -16,7 +18,7 @@ mongoose.connect(mongoUri)
   .then(() => console.log("MongoDB connected"))
   .catch((err) => console.error("MongoDB connection error:", err));
 
-const expenseRoutes = require("./routes/expense");
+const expenseRoutes = require("./router/expense");
 
 // Mount router (case-sensitive)
 app.use("/Expense", expenseRoutes);

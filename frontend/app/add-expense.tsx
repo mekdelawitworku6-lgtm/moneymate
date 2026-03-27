@@ -30,7 +30,7 @@ export default function AddExpenseScreen() {
 
       if (response.ok) {
         Alert.alert('Success', 'Expense added!');
-        router.back(); // Go back to expenses list
+        router.push('/'); // Navigate to expenses list
       } else {
         Alert.alert('Error', 'Failed to add expense');
       }
