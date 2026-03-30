@@ -4,6 +4,8 @@ import { useRouter } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
+const API_URL = 'http://192.168.1.100:5000'; // <-- replace with your actual host IP
+
 export default function AddExpenseScreen() {
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
@@ -16,7 +18,7 @@ export default function AddExpenseScreen() {
     }
 
     try {
-      const response = await fetch('http://localhost:5000/expense', {
+      const response = await fetch(`${API_URL}/expense`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -24,7 +26,7 @@ export default function AddExpenseScreen() {
         body: JSON.stringify({
           title,
           amount: parseFloat(amount),
-          date: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
         }),
       });
 

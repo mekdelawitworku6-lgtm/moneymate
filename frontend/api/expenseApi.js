@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:5000';
+const API_BASE = 'http://192.168.1.100:5000'; // replace with your PC local IP
 
 export const getExpenses = async () => {
   try {
