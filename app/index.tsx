@@ -1,24 +1,28 @@
 import { useEffect, useState, useCallback } from "react";
 import { useFocusEffect } from "expo-router";
 import {
-  View,
-  Text,
+  Dimensions,
   TextInput,
-  Button,
   Alert,
   ScrollView,
   FlatList,
   StyleSheet,
+  TouchableOpacity,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { LineChart, PieChart } from "react-native-chart-kit";
 import axios from "axios";
+import { ThemedView } from "@/components/themed-view";
+import { ThemedText } from "@/components/themed-text";
+import { useThemeColor } from "@/hooks/use-theme-color";
 
 export default function App() {
-  const API_URL = "http://192.168.1.13:5000"; // Your PC IP + backend port
+  const API_URL = "http://192.168.1.13:5000";
 
-  const [budget, setBudget] = useState<string>("");
-  const [title, setTitle] = useState<string>("");
-  const [amount, setAmount] = useState<string>("");
-  const [category, setCategory] = useState<string>("");
+  const [budget, setBudget] = useState("");
+  const [title, setTitle] = useState("");
+  const [amount, setAmount] = useState("");
+  const [category, setCategory] = useState("");
 
   const [data, setData] = useState({
     monthlyBudget: 0,
@@ -28,23 +32,24 @@ export default function App() {
   });
 
   const [expenses, setExpenses] = useState<
-    { title: string; amount: number; category: string }[]
+    { _id: string; title: string; amount: number; category: string }[]
   >([]);
 
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState(false);
 
-  // Fetch budget + totals + expenses
+  // Fetch data
   const fetchData = async () => {
     try {
       setLoading(true);
+
       const res = await axios.get(`${API_URL}/budget`);
       setData(res.data);
 
       const expRes = await axios.get(`${API_URL}/expenses`);
-      setExpenses(expRes.data); // assume backend returns array
+      setExpenses(expRes.data);
     } catch (err: any) {
       console.error("Axios error:", err.message);
-      Alert.alert("Network Error", "Cannot reach backend. Check IP & WiFi.");
+      Alert.alert("Network Error", "Check backend or WiFi");
     } finally {
       setLoading(false);
     }
@@ -55,146 +60,322 @@ export default function App() {
     if (!budget) return Alert.alert("Error", "Enter budget first");
 
     try {
-      await axios.post(`${API_URL}/budget`, { monthlyBudget: Number(budget) });
+      await axios.post(`${API_URL}/budget`, {
+        monthlyBudget: Number(budget),
+      });
       setBudget("");
       fetchData();
-    } catch (err: any) {
-      console.error("Axios error:", err.message);
-      Alert.alert("Network Error", "Cannot set budget");
+    } catch {
+      Alert.alert("Error", "Cannot set budget");
     }
   };
 
   // Add expense
   const addExpense = async () => {
-    if (!title || !amount || !category)
-      return Alert.alert("Error", "Enter title, amount, and category");
-
-    const newExpense = {
-      title,
-      amount: Number(amount),
-      category,
-    };
+    if (!title || !amount || !category) {
+      return Alert.alert("Error", "Fill all fields");
+    }
 
     try {
-      await axios.post(`${API_URL}/expense`, newExpense);
-      setExpenses(prev => [...prev, newExpense]); // update local state
+      await axios.post(`${API_URL}/expense`, {
+        title,
+        amount: Number(amount),
+        category,
+      });
+
+      // IMPORTANT: just refetch instead of manually updating
       setTitle("");
       setAmount("");
       setCategory("");
       fetchData();
-    } catch (err: any) {
-      console.error("Axios error:", err.message);
-      Alert.alert("Network Error", "Cannot add expense");
+    } catch {
+      Alert.alert("Error", "Cannot add expense");
     }
   };
 
-  // Calculate daily budget remaining
-  const calculateDailyBudget = () => {
-    const today = new Date();
-    const daysInMonth =
-      new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-    const daysLeft = daysInMonth - today.getDate() + 1;
-    const remaining = data.monthlyBudget - data.totalSpent;
-    return (remaining / daysLeft).toFixed(2);
+  // Delete expense
+  const deleteExpense = async (id: string) => {
+    try {
+      await axios.delete(`${API_URL}/expense/${id}`);
+      fetchData();
+    } catch {
+      Alert.alert("Error", "Cannot delete");
+    }
   };
 
-  useFocusEffect(useCallback(() => { fetchData(); }, []));
-  useEffect(() => { fetchData(); }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [])
+  );
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const primaryColor = useThemeColor({}, "primary");
+  const secondaryColor = useThemeColor({}, "secondary");
+  const borderColor = useThemeColor({}, "border");
+  const textColor = useThemeColor({}, "text");
+  const iconColor = useThemeColor({}, "icon");
+  const errorColor = useThemeColor({}, "error");
+
+  const screenWidth = Dimensions.get("window").width - 40;
+
+  const categoryTotals = expenses.reduce((totals, expense) => {
+    const category = expense.category || "Other";
+    totals[category] = (totals[category] ?? 0) + expense.amount;
+    return totals;
+  }, {} as Record<string, number>);
+
+  const categoryChartData = Object.entries(categoryTotals).map(
+    ([name, amount], index) => ({
+      name,
+      amount,
+      color: ["#0a7ea4", "#ff6b6b", "#ffc107", "#4caf50", "#9c27b0", "#00bcd4"][index % 6],
+      legendFontColor: textColor,
+      legendFontSize: 12,
+    })
+  );
+
+  const recentExpenses = expenses.slice(-6);
+  const trendData = {
+    labels: recentExpenses.map((item, index) =>
+      item.category ? item.category.slice(0, 6) : `E${index + 1}`
+    ),
+    datasets: [
+      {
+        data: recentExpenses.map((item) => item.amount),
+      },
+    ],
+  };
+
+  const chartConfig = {
+    backgroundGradientFrom: secondaryColor,
+    backgroundGradientTo: secondaryColor,
+    color: (opacity = 1) => `rgba(10, 126, 164, ${opacity})`,
+    labelColor: () => textColor,
+    decimalPlaces: 0,
+    style: {
+      borderRadius: 16,
+    },
+    propsForDots: {
+      r: "6",
+      strokeWidth: "2",
+      stroke: primaryColor,
+    },
+  };
 
   return (
-    <ScrollView style={styles.container}>
-      {/* Header */}
-      <Text style={styles.header}>Budget Tracker</Text>
+    <ThemedView style={styles.container}>
+      <ScrollView>
+        <ThemedText type="title" style={styles.header}>
+          Budget Tracker
+        </ThemedText>
 
-      {/* Styled Summary */}
-      <View style={styles.summaryBox}>
-        <Text style={styles.summaryTitle}>Budget Summary</Text>
-        <Text style={styles.summaryText}>Monthly Budget: {data.monthlyBudget}</Text>
-        <Text style={styles.summaryText}>Total Spent: {data.totalSpent}</Text>
-        <Text style={styles.summaryText}>
-          Daily Budget Remaining: {calculateDailyBudget()}
-        </Text>
-        <Text style={styles.summaryText}>Status: {data.message}</Text>
-      </View>
+        {/* Summary */}
+        <ThemedView
+          style={[
+            styles.summaryBox,
+            { backgroundColor: secondaryColor, borderColor },
+          ]}
+        >
+          <ThemedText
+            type="subtitle"
+            style={[styles.summaryTitle, { color: primaryColor }]}
+          >
+            Budget Summary
+          </ThemedText>
 
-      {/* Monthly Budget Input */}
-      <Text style={styles.label}>Set Monthly Budget:</Text>
-      <TextInput
-        placeholder="Enter budget"
-        value={budget}
-        onChangeText={setBudget}
-        keyboardType="numeric"
-        style={styles.input}
-      />
-      <Button title="Set Budget" onPress={setMonthlyBudget} />
+          <ThemedText style={styles.summaryText}>
+            Monthly Budget: ${data.monthlyBudget}
+          </ThemedText>
 
-      {/* Add Expense */}
-      <Text style={styles.label}>Add Expense:</Text>
-      <TextInput
-        placeholder="Title"
-        value={title}
-        onChangeText={setTitle}
-        style={styles.input}
-      />
-      <TextInput
-        placeholder="Amount"
-        value={amount}
-        onChangeText={setAmount}
-        keyboardType="numeric"
-        style={styles.input}
-      />
-      <TextInput
-        placeholder="Category (Food, Transport, etc.)"
-        value={category}
-        onChangeText={setCategory}
-        style={styles.input}
-      />
-      <Button title="Add Expense" onPress={addExpense} />
+          <ThemedText style={styles.summaryText}>
+            Total Spent: ${data.totalSpent}
+          </ThemedText>
 
-      {/* Expenses List */}
-      <View style={styles.expenses}>
-        <Text style={{ fontWeight: "bold", fontSize: 16 }}>Expenses:</Text>
-        <FlatList
-          data={expenses}
-          keyExtractor={(_, index) => index.toString()}
-          renderItem={({ item }) => (
-            <Text>
-              [{item.category}] {item.title}: {item.amount}
-            </Text>
-          )}
+          {/* ✅ FIXED HERE */}
+          <ThemedText style={styles.summaryText}>
+            Daily Budget Remaining: ${data.dailyBudget}
+          </ThemedText>
+
+          <ThemedText style={styles.summaryText}>
+            Status: {data.message}
+          </ThemedText>
+        </ThemedView>
+
+        {/* Charts */}
+        <ThemedText type="subtitle" style={[styles.chartTitle, { color: primaryColor }]}>Spending by Category</ThemedText>
+        <PieChart
+          data={categoryChartData}
+          width={screenWidth}
+          height={220}
+          chartConfig={chartConfig}
+          accessor="amount"
+          backgroundColor="transparent"
+          paddingLeft="15"
+          absolute
         />
-      </View>
 
-      {loading && <Text style={{ marginTop: 10 }}>Loading...</Text>}
-    </ScrollView>
+        <ThemedText type="subtitle" style={[styles.chartTitle, { color: primaryColor, marginTop: 20 }]}>Recent Expense Trend</ThemedText>
+        <LineChart
+          data={trendData}
+          width={screenWidth}
+          height={220}
+          chartConfig={chartConfig}
+          bezier
+          style={styles.chartStyle}
+        />
+
+        {/* Budget Input */}
+        <ThemedText style={styles.label}>Set Monthly Budget:</ThemedText>
+        <TextInput
+          placeholder="Enter budget"
+          value={budget}
+          onChangeText={setBudget}
+          keyboardType="numeric"
+          style={[styles.input, { borderColor, color: textColor }]}
+          placeholderTextColor={iconColor}
+        />
+
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: primaryColor }]}
+          onPress={setMonthlyBudget}
+        >
+          <Ionicons name="wallet" size={20} color="white" />
+          <ThemedText style={styles.buttonText}>Set Budget</ThemedText>
+        </TouchableOpacity>
+
+        {/* Add Expense */}
+        <ThemedText style={styles.label}>Add Expense:</ThemedText>
+
+        <TextInput
+          placeholder="Title"
+          value={title}
+          onChangeText={setTitle}
+          style={[styles.input, { borderColor, color: textColor }]}
+          placeholderTextColor={iconColor}
+        />
+
+        <TextInput
+          placeholder="Amount"
+          value={amount}
+          onChangeText={setAmount}
+          keyboardType="numeric"
+          style={[styles.input, { borderColor, color: textColor }]}
+          placeholderTextColor={iconColor}
+        />
+
+        <TextInput
+          placeholder="Category"
+          value={category}
+          onChangeText={setCategory}
+          style={[styles.input, { borderColor, color: textColor }]}
+          placeholderTextColor={iconColor}
+        />
+
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: primaryColor }]}
+          onPress={addExpense}
+        >
+          <Ionicons name="add-circle" size={20} color="white" />
+          <ThemedText style={styles.buttonText}>Add Expense</ThemedText>
+        </TouchableOpacity>
+
+        {/* Expenses */}
+        <ThemedView style={styles.expenses}>
+          <ThemedText type="defaultSemiBold">Expenses:</ThemedText>
+
+          <FlatList
+            data={expenses}
+            keyExtractor={(item) => item._id}
+            renderItem={({ item }) => (
+              <ThemedView
+                style={[
+                  styles.expenseItem,
+                  {
+                    backgroundColor: secondaryColor,
+                    borderColor,
+                    borderWidth: 1,
+                  },
+                ]}
+              >
+                <ThemedText>
+                  [{item.category}] {item.title}: ${item.amount}
+                </ThemedText>
+
+                <TouchableOpacity
+                  onPress={() => deleteExpense(item._id)}
+                >
+                  <Ionicons name="trash" size={20} color={errorColor} />
+                </TouchableOpacity>
+              </ThemedView>
+            )}
+          />
+        </ThemedView>
+
+        {loading && <ThemedText>Loading...</ThemedText>}
+      </ScrollView>
+    </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { marginTop: 50, padding: 20 },
-  header: { fontSize: 24, fontWeight: "bold" },
+  container: { flex: 1, marginTop: 50, padding: 20 },
+  header: { marginBottom: 20 },
+
   summaryBox: {
     marginTop: 20,
     padding: 15,
     borderRadius: 10,
-    backgroundColor: "#f0f8ff",
     borderWidth: 1,
-    borderColor: "#1e90ff",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
   },
+
   summaryTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
     marginBottom: 8,
-    color: "#1e90ff",
     textAlign: "center",
   },
-  summaryText: { fontSize: 16, marginBottom: 3 },
-  label: { marginTop: 20, fontSize: 16 },
-  input: { borderWidth: 1, padding: 8, marginVertical: 5, borderRadius: 5 },
+
+  summaryText: { marginBottom: 3 },
+
+  label: { marginTop: 20 },
+
+  input: {
+    borderWidth: 1,
+    padding: 8,
+    marginVertical: 5,
+    borderRadius: 5,
+  },
+
+  button: {
+    flexDirection: "row",
+    justifyContent: "center",
+    padding: 10,
+    borderRadius: 5,
+    marginVertical: 10,
+  },
+
+  buttonText: {
+    color: "white",
+    marginLeft: 5,
+  },
+
   expenses: { marginTop: 20 },
+
+  expenseItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    padding: 10,
+    marginVertical: 2,
+    borderRadius: 5,
+  },
+  chartTitle: {
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  chartStyle: {
+    borderRadius: 16,
+    marginVertical: 8,
+  },
 });
